@@ -54,4 +54,25 @@ HelpScreen { align: center middle; background: #000000 70%; }
     border: solid #9333ea; background: #0a050f; padding: 1 2;
 }
 
+SettingsScreen { align: center middle; background: #000000 70%; }
+#settings { width: 68; height: auto; border: solid #9333ea; background: #0a050f; padding: 1 2; }
+#settings_title { text-style: bold; color: #d946ef; }
+#settings_sub { color: #6b7280; }
+.set_row { height: 3; }
+.set_row Static { width: 1fr; content-align: left middle; color: #9ca3af; }
+.set_row Input { width: 18; }
+#settings_buttons { height: 3; align: right middle; margin-top: 1; }
+#settings_buttons Button { margin: 0 0 0 1; }
+
+#page_bar { height: 1; background: #050505; padding: 0 1; }
+#page_bar Button {
+    min-width: 3; width: auto; height: 1;
+    border: none; background: #14091f; color: #d946ef; text-style: bold;
+    margin: 0 1 0 0; padding: 0 1;
+}
+#page_bar Button:hover { background: #9333ea; color: #ffffff; }
+#page_bar Button:disabled { color: #4b2a6b; background: #0a050f; }
+#page_label { width: auto; height: 1; content-align: center middle; color: #9ca3af; padding: 0 1; }
+#page_spacer { width: 1fr; height: 1; }
+
 ProgressBar { dock: bottom; margin: 0 1; height: 1; color: #d946ef; background: #1a0b26; }

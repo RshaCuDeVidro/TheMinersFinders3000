@@ -1,11 +1,30 @@
 """Async scanning of Minecraft servers."""
 
+import asyncio
 import json
+import socket
 
 from mcstatus import JavaServer
 
+from .models import new_entry
 from .motd import clean_mc_codes
 from .protocol import check_whitelist_aggressive, parse_host_port
+
+
+def classify_error(exc):
+    """Map an exception to a short failure reason."""
+    name = type(exc).__name__
+    if isinstance(exc, asyncio.TimeoutError) or "Timeout" in name:
+        return "timeout"
+    if isinstance(exc, ConnectionRefusedError):
+        return "refused"
+    if isinstance(exc, ConnectionResetError):
+        return "reset"
+    if isinstance(exc, socket.gaierror):
+        return "dns"
+    if isinstance(exc, OSError):
+        return "io"
+    return name
 
 
 def read_hosts_file(path, default_port):
@@ -33,7 +52,11 @@ def read_hosts_file(path, default_port):
 
 
 async def check_host(host, timeout=2.0):
-    """Query a single server. Returns an ``online`` entry dict or ``None`` on failure."""
+    """Query a single server.
+
+    Returns an entry dict. On success ``state == "online"``; on failure
+    ``state == "failed"`` with an ``error`` reason (timeout/refused/reset/dns).
+    """
     try:
         addr, port = parse_host_port(host)
         server = await JavaServer.async_lookup(host, timeout=timeout)
@@ -68,6 +91,10 @@ async def check_host(host, timeout=2.0):
             "mods": found_mods,
             "whitelist": whitelist,
             "starred": False,
+            "error": None,
         }
-    except Exception:
-        return None
+    except Exception as exc:
+        entry = new_entry(host)
+        entry["state"] = "failed"
+        entry["error"] = classify_error(exc)
+        return entry

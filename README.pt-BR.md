@@ -10,11 +10,15 @@ Scanner de servidores Minecraft (Java) rápido e assíncrono, com interface em t
 
 - **Scan assíncrono** com concorrência configurável.
 - **Estado por host**: `queued → scanning → online / failed` (offline/falhos ficam visíveis).
+- **Motivo da falha**: cada host que falha registra o porquê (`timeout`, `refused`, `reset`, `dns`, `io`), exibido no painel de detalhes e filtrável com `err:<motivo>`.
 - **Detecção de whitelist** por tentativa de login e leitura do motivo da desconexão.
 - **Detecção de mods** (Forge `forgeData` e `modinfo`/`modList`).
 - **MOTD colorido** — suporta códigos legados `§`, hex moderno `§x§R§R§G§G§B§B`, maiúsculos e `§k`.
 - **Filtro por query**: `mod:create`, `ver:1.20`, `players:>20`, `ping:<50`, `wl:yes`, `state:failed`, `starred:1` + texto livre.
 - **Abas**: todos / modded / whitelist / favoritos.
+- **Paginação**: 200 linhas por página (`[` / `]`, `Home` / `End`, ou os botões na tela) pra UI continuar rápida em listas enormes.
+- **Menu de configuração**: ajuste concorrência (threads), timeout, tamanho da página e porta padrão em tempo real.
+- **Barra de progresso** ao vivo com porcentagem/ETA durante o scan.
 - **Ordenação** por jogadores, ping, versão ou nome (e por clique no cabeçalho da coluna).
 - **Cache** (`.mcscan_cache.json`) com autosave e `--resume`.
 - **Export** para JSON e CSV; copiar IP, mods e MOTD.
@@ -78,6 +82,9 @@ mc.example.net:25566
 | `?` | Ajuda |
 | `↑ ↓` | Navegar |
 | `1 2 3 4` | Abas: all / modded / whitelist / starred (`d` / `w` atalhos) |
+| `[` / `]` | Página anterior / próxima |
+| `Home` / `End` | Primeira / última página |
+| `o` | Configurações (threads, timeout, tamanho da página, porta) |
 | `s p v n` | Ordenar por players / ping / version / nome |
 | `*` | Favoritar |
 | `c m t` | Copiar IP / mods / MOTD |
@@ -97,6 +104,7 @@ players:>20           # operadores: > < >= <= =
 ping:<50
 wl:yes                # yes / no / unknown (y/n/?)
 state:failed          # queued / scanning / online / failed
+err:timeout           # timeout / refused / reset / dns / io
 starred:1
 ```
 

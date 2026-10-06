@@ -24,6 +24,7 @@ mc_servers_*.csv
 
 # local target lists (do not publish)
 ips.txt
+ips*.txt
 
 # --- Editors / OS ---
 .vscode/

@@ -14,12 +14,12 @@ from rich.text import Text as RichText
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import DataTable, Footer, Header, Input, ProgressBar, Static, Tab, Tabs
+from textual.widgets import Button, DataTable, Footer, Header, Input, ProgressBar, Static, Tab, Tabs
 
 from . import cache as cache_mod
 from .constants import (
-    AUTOSAVE_INTERVAL, DEFAULT_CACHE, DEFAULT_PORT, DIRTY_BATCH,
-    MAX_DISPLAY_ROWS, MAX_PLACEHOLDER_ROWS, REFRESH_INTERVAL, STATE_STYLE,
+    AUTOSAVE_INTERVAL, DEFAULT_CACHE, DEFAULT_PORT, MATCH_CHUNK,
+    PAGE_SIZE, REFRESH_INTERVAL, STATE_STYLE,
 )
 from .formatting import latency_style
 from .models import new_entry, search_blob
@@ -27,7 +27,7 @@ from .motd import clean_mc_codes
 from .query import parse_query
 from .scanner import check_host, read_hosts_file
 from .util import copy_to_clipboard
-from .widgets import HelpScreen, ServerDetails
+from .widgets import HelpScreen, ServerDetails, SettingsScreen
 
 _CELL_CACHE = {}
 
@@ -57,27 +57,32 @@ class McScanFodaApp(App):
         Binding("q", "quit", "exit"),
         Binding("slash", "focus_filter", "search"),
         Binding("f", "focus_filter", "search", show=False),
-        Binding("escape", "clear_filter", "clear"),
-        Binding("enter", "focus_table", "table"),
+        Binding("escape", "clear_filter", "clear", show=False),
+        Binding("enter", "focus_table", "table", show=False),
         Binding("question_mark", "help", "help"),
-        Binding("1", "view_all", "all"),
-        Binding("2", "view_modded", "modded"),
-        Binding("3", "view_whitelist", "wl"),
-        Binding("4", "view_starred", "star"),
+        Binding("o", "settings", "settings", show=False),
+        Binding("1", "view_all", "all", show=False),
+        Binding("2", "view_modded", "modded", show=False),
+        Binding("3", "view_whitelist", "wl", show=False),
+        Binding("4", "view_starred", "star", show=False),
         Binding("d", "view_modded", "modded", show=False),
         Binding("w", "view_whitelist", "wl", show=False),
-        Binding("s", "sort_players", "sort ply"),
-        Binding("p", "sort_ping", "sort ping"),
-        Binding("v", "sort_version", "sort ver"),
-        Binding("n", "sort_name", "sort name"),
+        Binding("s", "sort_players", "sort ply", show=False),
+        Binding("p", "sort_ping", "sort ping", show=False),
+        Binding("v", "sort_version", "sort ver", show=False),
+        Binding("n", "sort_name", "sort name", show=False),
         Binding("asterisk", "toggle_star", "star"),
-        Binding("c", "copy_ip", "ip"),
-        Binding("m", "copy_mods", "mods"),
-        Binding("t", "copy_motd", "motd"),
-        Binding("r", "rescan_selected", "rescan"),
-        Binding("u", "rescan_failed", "rescan failed"),
-        Binding("e", "export_json", "json"),
-        Binding("x", "export_csv", "csv"),
+        Binding("left_square_bracket", "page_prev", "pg-"),
+        Binding("right_square_bracket", "page_next", "pg+"),
+        Binding("home", "page_first", "first", show=False),
+        Binding("end", "page_last", "last", show=False),
+        Binding("c", "copy_ip", "ip", show=False),
+        Binding("m", "copy_mods", "mods", show=False),
+        Binding("t", "copy_motd", "motd", show=False),
+        Binding("r", "rescan_selected", "rescan", show=False),
+        Binding("u", "rescan_failed", "rescan failed", show=False),
+        Binding("e", "export_json", "json", show=False),
+        Binding("x", "export_csv", "csv", show=False),
     ]
 
     def __init__(self, hosts_file, timeout=2.0, concurrency=400, default_port=DEFAULT_PORT,
@@ -94,7 +99,6 @@ class McScanFodaApp(App):
 
         self.all_entries = []
         self.by_host = {}
-        self.row_keys = {}
         self.col_keys = []
         self.online_count = 0
         self.failed_count = 0
@@ -107,6 +111,14 @@ class McScanFodaApp(App):
         self._selected = None
         self._filter_pred = parse_query("")
         self._last_query_text = ""
+
+        self.page = 0
+        self.page_size = PAGE_SIZE
+        self._match_count = 0
+        self._match_dirty = True
+        self._match_pos = 0
+        self._page_dirty = True
+
         self._filter_timer = None
         self._refresh_timer = None
         self._save_timer = None
@@ -114,17 +126,8 @@ class McScanFodaApp(App):
         self._scanning = False
         self._progress_active = False
         self._scan_start = None
-        self._dirty = set()
-        self._row_gen = 0
-        self._rebuilding = False
-        self._rebuild_pending = False
         self._last_progress = -1
         self._status_text = None
-        self._rebuild_pos = 0
-        self._rebuild_selected = None
-        self._rebuild_count = 0
-        self._rebuild_truncated = False
-        self._cap_notified = False
         self._rate_times = deque(maxlen=200)
 
     # ------------------------------------------------------------ compose
@@ -143,6 +146,13 @@ class McScanFodaApp(App):
         with Horizontal(id="main"):
             with Vertical(id="left_pane"):
                 yield DataTable(id="server_table")
+                with Horizontal(id="page_bar"):
+                    yield Button("<", id="page_prev")
+                    yield Static("1 / 1", id="page_label")
+                    yield Button(">", id="page_next")
+                    yield Static("", id="page_spacer")
+                    yield Button("★", id="do_star")
+                    yield Button("settings", id="do_settings")
             with VerticalScroll(id="right_pane"):
                 yield ServerDetails(id="details")
         yield ProgressBar(id="progress", show_eta=True, show_percentage=True)
@@ -168,6 +178,14 @@ class McScanFodaApp(App):
         self._save_timer = self.set_interval(AUTOSAVE_INTERVAL, self._autosave_tick)
         self.call_after_refresh(self._apply_column_widths)
         self._update_status()
+
+    def on_unmount(self) -> None:
+        for timer in (self._refresh_timer, self._save_timer, self._filter_timer):
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
 
     def _apply_column_widths(self):
         try:
@@ -197,7 +215,8 @@ class McScanFodaApp(App):
         if self.all_entries:
             self.online_count = sum(1 for e in self.all_entries if e["state"] == "online")
             self.failed_count = sum(1 for e in self.all_entries if e["state"] == "failed")
-            self._update_status()
+            self._invalidate_matches()
+            self._render_page()
             self.notify(f"loaded {len(self.all_entries)} cached servers")
 
     def save_cache(self):
@@ -235,11 +254,93 @@ class McScanFodaApp(App):
             self.all_entries.append(r)
             self.by_host[r["host"]] = r
 
+    # --------------------------------------------------- pagination/state
+    def _invalidate_matches(self):
+        self._match_dirty = True
+        self._match_pos = 0
+        self._match_count = 0
+        self._page_dirty = True
+
+    def _match_step(self):
+        entries = self.all_entries
+        n = 0
+        while self._match_pos < len(entries) and n < MATCH_CHUNK:
+            e = entries[self._match_pos]
+            self._match_pos += 1
+            if self._visible(e):
+                self._match_count += 1
+            n += 1
+        if self._match_pos >= len(entries):
+            self._match_dirty = False
+            self._update_page_label()
+
+    def _page_entries(self, page):
+        start = page * self.page_size
+        out = []
+        idx = 0
+        for e in self.all_entries:
+            if not self._visible(e):
+                continue
+            if idx >= start:
+                out.append(e)
+                if len(out) >= self.page_size:
+                    break
+            idx += 1
+        return out
+
+    def _total_pages(self):
+        if self._match_dirty:
+            return None
+        return max(1, (self._match_count + self.page_size - 1) // self.page_size)
+
+    def _render_page(self):
+        try:
+            table = self.query_one(DataTable)
+        except Exception:
+            return
+        table.clear()
+        self._page_dirty = False
+        for e in self._page_entries(self.page):
+            table.add_row(*self._row_cells(e), key=e["host"])
+        if self._selected:
+            try:
+                table.move_cursor(row=table.get_row_index(self._selected))
+            except Exception:
+                pass
+        self._update_page_label()
+
+    def _update_page_label(self):
+        total = self._total_pages()
+        txt = f"{self.page + 1} / {total}" if total else f"{self.page + 1} / ?"
+        at_start = self.page == 0
+        at_end = total is not None and self.page >= total - 1
+        try:
+            self.query_one("#page_label", Static).update(txt)
+            self.query_one("#page_prev", Button).disabled = at_start
+            self.query_one("#page_next", Button).disabled = at_end
+        except Exception:
+            pass
+
+    def _go_page(self, delta):
+        total = self._total_pages()
+        if delta <= -10 ** 8:
+            new = 0
+        elif delta >= 10 ** 8:
+            new = (total - 1) if total else self.page
+        else:
+            new = self.page + delta
+        new = max(0, new) if total is None else max(0, min(total - 1, new))
+        if new != self.page:
+            self.page = new
+            self._render_page()
+            self._update_status()
+
     # ------------------------------------------------------------ refresh
     def refresh_ui(self):
-        if self._rebuild_pending:
-            self._rebuild_step()
-        self._flush_dirty()
+        if self._match_dirty:
+            self._match_step()
+        if self._page_dirty:
+            self._render_page()
         if self._progress_active and self.completed_count != self._last_progress:
             self._last_progress = self.completed_count
             try:
@@ -247,15 +348,6 @@ class McScanFodaApp(App):
             except Exception:
                 pass
         self._update_status()
-
-    def _flush_dirty(self, batch=DIRTY_BATCH):
-        if self._rebuilding or not self._dirty:
-            return
-        for host in list(self._dirty)[:batch]:
-            self._dirty.discard(host)
-            e = self.by_host.get(host)
-            if e is not None:
-                self._show_entry(e)
 
     # --------------------------------------------------------------- scan
     def _read_hosts(self):
@@ -269,14 +361,11 @@ class McScanFodaApp(App):
         return hosts
 
     def _ensure_entries(self, hosts):
-        added = False
         for h in hosts:
             if h not in self.by_host:
                 e = new_entry(h)
                 self.by_host[h] = e
                 self.all_entries.append(e)
-                added = True
-        return added
 
     def _should_scan(self, host):
         e = self.by_host.get(host)
@@ -289,8 +378,9 @@ class McScanFodaApp(App):
         if hosts is None:
             return
         self._ensure_entries(hosts)
-        self._row_gen += 1
-        await self._populate_placeholder_rows(self._row_gen)
+        self.page = 0
+        self._invalidate_matches()
+        self._render_page()
 
         pending = [h for h in hosts if self._should_scan(h)]
         if self.resume:
@@ -315,30 +405,12 @@ class McScanFodaApp(App):
         except Exception:
             pass
         self._progress_active = False
-        self._flush_dirty()
+        self._invalidate_matches()
+        self._render_page()
         await self._save_cache_async(force=True)
         elapsed = time.monotonic() - self._scan_start
         self._update_status()
         self.notify(f"done! {self.online_count} online | {self.failed_count} failed | {elapsed:.1f}s")
-
-    async def _populate_placeholder_rows(self, gen):
-        table = self.query_one(DataTable)
-        entries = self.all_entries
-        limit = len(entries)
-        if limit > MAX_PLACEHOLDER_ROWS:
-            self.notify(f"showing first {MAX_PLACEHOLDER_ROWS} of {limit} hosts — use the filter")
-            limit = MAX_PLACEHOLDER_ROWS
-        n = 0
-        for e in entries[:limit]:
-            if gen != self._row_gen:
-                return
-            host = e["host"]
-            if host not in self.row_keys and self._visible(e):
-                self.row_keys[host] = table.add_row(*self._row_cells(e), key=host)
-                n += 1
-                if n % 500 == 0:
-                    await asyncio.sleep(0)
-        await asyncio.sleep(0)
 
     async def _run_pool(self, hosts):
         if not hosts:
@@ -369,7 +441,7 @@ class McScanFodaApp(App):
 
     def _finish(self, host, res):
         old = self.by_host[host].get("state")
-        if res:
+        if res is not None and res.get("state") == "online":
             res["starred"] = self.by_host[host].get("starred", False)
             self._index_result(res)
             self._count_transition(old, "online")
@@ -377,7 +449,8 @@ class McScanFodaApp(App):
             e = self.by_host[host]
             self._count_transition(old, "failed")
             e["state"] = "failed"
-        self._dirty.add(host)
+            e["error"] = (res or {}).get("error")
+        self._page_dirty = True
         self._cache_dirty = True
 
     def _count_transition(self, old, new):
@@ -452,94 +525,6 @@ class McScanFodaApp(App):
             return e.get("version", "")
         return e.get("host", "")
 
-    def rebuild_rows(self):
-        self._row_gen += 1
-        self._rebuilding = True
-        self._rebuild_pending = True
-        self._rebuild_pos = 0
-        self._rebuild_selected = self._selected
-        self._rebuild_count = 0
-        self._rebuild_truncated = False
-        self._cap_notified = False
-        if self.sort_key:
-            self.all_entries.sort(key=self._sort_value, reverse=self.sort_desc)
-        try:
-            table = self.query_one(DataTable)
-            table.clear()
-            self.row_keys.clear()
-        except Exception:
-            self._rebuild_pending = False
-            self._rebuilding = False
-
-    def _rebuild_step(self, chunk=500):
-        try:
-            table = self.query_one(DataTable)
-        except Exception:
-            self._rebuild_pending = False
-            self._rebuilding = False
-            return
-        entries = self.all_entries
-        n = 0
-        while self._rebuild_pos < len(entries) and n < chunk:
-            e = entries[self._rebuild_pos]
-            self._rebuild_pos += 1
-            if self._visible(e):
-                self.row_keys[e["host"]] = table.add_row(*self._row_cells(e), key=e["host"])
-                self._rebuild_count += 1
-                n += 1
-                if self._rebuild_count >= MAX_DISPLAY_ROWS:
-                    self._rebuild_truncated = True
-                    self._rebuild_pos = len(entries)
-                    break
-        if self._rebuild_pos >= len(entries):
-            self._rebuild_pending = False
-            self._rebuilding = False
-            if self._rebuild_truncated and not self._cap_notified:
-                self._cap_notified = True
-                self.notify(f"showing first {MAX_DISPLAY_ROWS} rows — refine the filter")
-            if self._rebuild_selected:
-                try:
-                    table.move_cursor(row=table.get_row_index(self._rebuild_selected))
-                except Exception:
-                    pass
-            self._update_status()
-
-    def _show_entry(self, e):
-        try:
-            table = self.query_one(DataTable)
-        except Exception:
-            return
-        host = e["host"]
-        row_key = self.row_keys.get(host)
-        if self._visible(e):
-            cells = self._row_cells(e)
-            if row_key is not None:
-                try:
-                    for col, val in zip(self.col_keys, cells):
-                        table.update_cell(row_key, col, val, update_width=False)
-                except Exception:
-                    try:
-                        table.remove_row(row_key)
-                    except Exception:
-                        pass
-                    self.row_keys.pop(host, None)
-                    row_key = None
-            if row_key is None:
-                if len(self.row_keys) >= MAX_DISPLAY_ROWS:
-                    return
-                self.row_keys[host] = table.add_row(*cells, key=host)
-        elif row_key is not None:
-            try:
-                table.remove_row(row_key)
-            except Exception:
-                pass
-            self.row_keys.pop(host, None)
-        if self._selected == host:
-            try:
-                self.query_one("#details").update_details(e)
-            except Exception:
-                pass
-
     def _selected_host(self):
         table = self.query_one(DataTable)
         if table.row_count == 0 or table.cursor_row is None:
@@ -559,7 +544,9 @@ class McScanFodaApp(App):
                 tabs.active = view
         except Exception:
             pass
-        self.rebuild_rows()
+        self.page = 0
+        self._invalidate_matches()
+        self._render_page()
         self._update_status()
 
     # ------------------------------------------------------------- status
@@ -571,16 +558,25 @@ class McScanFodaApp(App):
 
     def _update_status(self):
         queued = max(0, len(self.all_entries) - self.online_count - self.failed_count)
-        state = (f"[#06b6d4]● scanning[/] {self._rate():.0f}/s" if self._scanning
-                 else "[#22c55e]● idle[/]")
+        if self._scanning:
+            pct = (self.completed_count / self.total_hosts * 100) if self.total_hosts else 0.0
+            state = f"[#06b6d4]● scanning[/] {self.completed_count}/{self.total_hosts} ({pct:.0f}%) {self._rate():.0f}/s"
+        else:
+            state = "[#22c55e]● idle[/]"
+        total = self._total_pages()
+        page_txt = f"page {self.page + 1}/{total}" if total else f"page {self.page + 1}/?"
         arrow = ("↓" if self.sort_desc else "↑") if self.sort_key else ""
         sort_txt = f"{self.sort_key} {arrow}".strip() if self.sort_key else "—"
-        ftext = self.query_one("#filter_input").value.strip()
+        try:
+            ftext = self.query_one("#filter_input").value.strip()
+        except Exception:
+            ftext = ""
         line = (
             f"{state}  [#6b7280]│[/]  "
             f"[#22c55e]{self.online_count}[/] online  "
             f"[#ef4444]{self.failed_count}[/] failed  "
             f"[#6b7280]{queued}[/] queued  [#6b7280]│[/]  "
+            f"[bold #d946ef]{page_txt}[/]  [#6b7280]│[/]  "
             f"view [bold #d946ef]{self.view}[/]  sort [bold #d946ef]{sort_txt}[/]"
         )
         if ftext:
@@ -598,7 +594,9 @@ class McScanFodaApp(App):
         view = (event.tab.id or "all") if event.tab else "all"
         if view != self.view:
             self.view = view
-            self.rebuild_rows()
+            self.page = 0
+            self._invalidate_matches()
+            self._render_page()
             self._update_status()
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -608,12 +606,17 @@ class McScanFodaApp(App):
             self._filter_timer = self.set_timer(0.2, self._recompile_filter)
 
     def _recompile_filter(self):
-        text = self.query_one("#filter_input").value
+        try:
+            text = self.query_one("#filter_input").value
+        except Exception:
+            return
         if text == self._last_query_text:
             return
         self._last_query_text = text
         self._filter_pred = parse_query(text)
-        self.rebuild_rows()
+        self.page = 0
+        self._invalidate_matches()
+        self._render_page()
         self._update_status()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -644,7 +647,9 @@ class McScanFodaApp(App):
             inp.value = ""
             self._last_query_text = ""
             self._filter_pred = parse_query("")
-            self.rebuild_rows()
+            self.page = 0
+            self._invalidate_matches()
+            self._render_page()
             self._update_status()
 
     def action_focus_table(self):
@@ -652,6 +657,42 @@ class McScanFodaApp(App):
 
     def action_help(self):
         self.push_screen(HelpScreen())
+
+    def action_settings(self):
+        self.push_screen(SettingsScreen({
+            "concurrency": self.concurrency,
+            "timeout": self.timeout,
+            "page_size": self.page_size,
+            "default_port": self.default_port,
+        }))
+
+    def apply_settings(self, cfg):
+        self.concurrency = max(1, int(cfg.get("concurrency", self.concurrency)))
+        self.timeout = max(0.1, float(cfg.get("timeout", self.timeout)))
+        self.page_size = max(10, int(cfg.get("page_size", self.page_size)))
+        self.default_port = int(cfg.get("default_port", self.default_port))
+        self.page = 0
+        self._invalidate_matches()
+        self._render_page()
+        self._update_status()
+        self.notify(f"settings: {self.concurrency} threads · {self.page_size}/page · timeout {self.timeout:g}s")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "page_prev":
+            self._go_page(-1)
+        elif bid == "page_next":
+            self._go_page(1)
+        elif bid == "do_star":
+            self.action_toggle_star()
+        elif bid == "do_settings":
+            self.action_settings()
+        else:
+            return
+        try:
+            self.query_one(DataTable).focus()
+        except Exception:
+            pass
 
     def action_view_all(self):
         self._set_view("all")
@@ -665,13 +706,28 @@ class McScanFodaApp(App):
     def action_view_starred(self):
         self._set_view("starred")
 
+    def action_page_prev(self):
+        self._go_page(-1)
+
+    def action_page_next(self):
+        self._go_page(1)
+
+    def action_page_first(self):
+        self._go_page(-10 ** 9)
+
+    def action_page_last(self):
+        self._go_page(10 ** 9)
+
     def _sort_by(self, key):
         if self.sort_key == key:
             self.sort_desc = not self.sort_desc
         else:
             self.sort_key = key
             self.sort_desc = key in ("players",)
-        self.rebuild_rows()
+        self.all_entries.sort(key=self._sort_value, reverse=self.sort_desc)
+        self.page = 0
+        self._invalidate_matches()
+        self._render_page()
         self._update_status()
         self.notify(f"sorted by {key} {'desc' if self.sort_desc else 'asc'}")
 
@@ -693,7 +749,10 @@ class McScanFodaApp(App):
             return
         e = self.by_host[host]
         e["starred"] = not e.get("starred")
-        self._show_entry(e)
+        self._page_dirty = True
+        if self.view == "starred" and not e["starred"]:
+            self._invalidate_matches()
+        self._render_page()
         self._cache_dirty = True
         self.notify("starred" if e["starred"] else "unstarred")
 
@@ -727,10 +786,11 @@ class McScanFodaApp(App):
     async def _rescan_one(self, host):
         e = self.by_host[host]
         self._set_state(host, "scanning")
-        self._show_entry(e)
+        self._render_page()
         res = await self.check_server(host)
         self._finish(host, res)
-        self._flush_dirty()
+        self._invalidate_matches()
+        self._render_page()
         self._update_status()
         await self._save_cache_async(force=True)
 
@@ -746,7 +806,8 @@ class McScanFodaApp(App):
         self._update_status()
         await self._run_pool(hosts)
         self._scanning = False
-        self._flush_dirty()
+        self._invalidate_matches()
+        self._render_page()
         self._update_status()
         await self._save_cache_async(force=True)
         self.notify(f"rescanned {len(hosts)} failed host(s)")
@@ -776,11 +837,12 @@ class McScanFodaApp(App):
         try:
             with path.open("w", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["host", "state", "version", "online", "max", "latency_ms",
+                w.writerow(["host", "state", "error", "version", "online", "max", "latency_ms",
                             "whitelist", "starred", "mods", "motd"])
                 for r in self.all_entries:
                     w.writerow([
-                        r["host"], r.get("state", ""), r.get("version", ""),
+                        r["host"], r.get("state", ""), r.get("error") or "",
+                        r.get("version", ""),
                         r.get("online", 0), r.get("max", 0),
                         f"{r.get('latency', 0.0):.1f}" if r.get("latency") is not None else "",
                         r.get("whitelist", "unknown"), bool(r.get("starred")),

@@ -41,6 +41,8 @@ def _term(entry, key, val):
         return entry.get("whitelist", "unknown") == table.get(val, val)
     if key in ("state", "status"):
         return entry.get("state", "") == val
+    if key in ("err", "error"):
+        return val in str(entry.get("error") or "").lower()
     if key in ("star", "starred"):
         return bool(entry.get("starred")) == (val in ("1", "true", "yes", "y"))
     if key in ("players", "ply"):

@@ -10,11 +10,15 @@ A fast, asynchronous Minecraft (Java) server scanner with a terminal UI. It read
 
 - **Async scan** with configurable concurrency.
 - **Per-host state**: `queued → scanning → online / failed` (offline/failed hosts stay visible).
+- **Failure reasons**: each failed host records why (`timeout`, `refused`, `reset`, `dns`, `io`), shown in the details panel and filterable with `err:<reason>`.
 - **Whitelist detection** by attempting a login and reading the disconnect reason.
 - **Mod detection** (Forge `forgeData` and `modinfo`/`modList`).
 - **Colored MOTD** — supports legacy `§` codes, modern hex `§x§R§R§G§G§B§B`, uppercase codes and `§k`.
 - **Query filter**: `mod:create`, `ver:1.20`, `players:>20`, `ping:<50`, `wl:yes`, `state:failed`, `starred:1` plus free text.
 - **Tabs**: all / modded / whitelist / starred.
+- **Pagination**: 200 rows per page (`[` / `]`, `Home` / `End`, or the on-screen buttons) so the UI stays fast on huge lists.
+- **Settings menu**: tune concurrency (threads), timeout, page size and default port on the fly.
+- **Live progress bar** with percentage/ETA while scanning.
 - **Sorting** by players, ping, version or name (also by clicking the column header).
 - **Cache** (`.mcscan_cache.json`) with autosave and `--resume`.
 - **Export** to JSON and CSV; copy IP, mods and MOTD.
@@ -78,6 +82,9 @@ mc.example.net:25566
 | `?` | Help |
 | `↑ ↓` | Navigate |
 | `1 2 3 4` | Tabs: all / modded / whitelist / starred (`d` / `w` shortcuts) |
+| `[` / `]` | Previous / next page |
+| `Home` / `End` | First / last page |
+| `o` | Settings (threads, timeout, page size, port) |
 | `s p v n` | Sort by players / ping / version / name |
 | `*` | Star |
 | `c m t` | Copy IP / mods / MOTD |
@@ -97,6 +104,7 @@ players:>20           # operators: > < >= <= =
 ping:<50
 wl:yes                # yes / no / unknown (y/n/?)
 state:failed          # queued / scanning / online / failed
+err:timeout           # timeout / refused / reset / dns / io
 starred:1
 ```
 
