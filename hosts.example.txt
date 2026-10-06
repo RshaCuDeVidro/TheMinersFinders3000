@@ -1,0 +1,11 @@
+# Exemplo de arquivo de hosts — uma entrada por linha.
+# Formatos aceitos:
+#   host
+#   host:porta
+#   [ipv6]:porta
+#   {"ip": "1.2.3.4", "port": 25565}   (JSON por linha)
+
+play.example.com
+mc.example.net:25566
+[2001:db8::1]:25565
+{"ip": "10.0.0.5", "port": 25565}

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minersfinder"
+version = "1.0.0"
+description = "TheMinersFinder3000 — Minecraft server scanner TUI (status, whitelist, mods, players)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["minecraft", "scanner", "tui", "textual", "mcstatus"]
+dependencies = [
+    "mcstatus>=11.0",
+    "textual>=0.80",
+]
+
+[project.scripts]
+minersfinder = "minersfinder.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["minersfinder*"]
+
+[tool.setuptools.package-data]
+minersfinder = ["app.tcss"]
