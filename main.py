@@ -1,7 +1,7 @@
-"""Backwards-compatible entry point.
+"""Convenience entry point.
 
-The project now lives in the :mod:`minersfinder` package; this shim keeps the
-old ``python3 mcscanfoda.py hosts.txt`` invocation working.
+The project lives in the :mod:`minersfinder` package; this shim lets you run
+``python3 main.py hosts.txt`` from the repository root.
 """
 
 from minersfinder.cli import main

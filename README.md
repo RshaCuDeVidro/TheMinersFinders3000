@@ -1,54 +1,53 @@
 # TheMinersFinder3000
 
-> Scanner de servidores Minecraft (Java) com uma TUI rápida, assíncrona e com a estética *underground cyberpunk* do [pwnd.blog](https://pwnd.blog).
+**English** · [Português (BR)](README.pt-BR.md)
 
 ![screenshot](docs/screenshot.png)
 
-Escaneia uma lista de `host[:port]`, mostra **status, versão, jogadores, latência, mods e whitelist** em tempo real, com busca/filtros por query, ordenação, favoritos e exportação. Cache automático para retomar scans grandes.
+A fast, asynchronous Minecraft (Java) server scanner with a terminal UI. It reads a list of `host[:port]`, shows **status, version, players, latency, mods and whitelist** in real time, and supports query filters, sorting, favorites and export. A local cache lets you resume large scans.
 
-## Recursos
+## Features
 
-- **Scan assíncrono** com concorrência configurável.
-- **Estado por host**: `queued → scanning → online / failed` (offline/falhos ficam visíveis).
-- **Detecção de whitelist** por tentativa de login e leitura do motivo de desconexão.
-- **Detecção de mods** (Forge/`forgeData` e `modinfo`/`modList`).
-- **MOTD colorido** — suporta códigos legados `§`, hex moderno `§x§R§R§G§G§B§B`, maiúsculos e `§k`.
-- **Filtro por query**: `mod:create`, `ver:1.20`, `players:>20`, `ping:<50`, `wl:yes`, `state:failed`, `starred:1` + texto livre.
-- **Abas**: todos / modded / whitelist / favoritos.
-- **Ordenação** por jogadores, ping, versão ou nome (e clique no cabeçalho).
-- **Cache** (`.mcscan_cache.json`) com autosave e `--resume`.
-- **Export** JSON e CSV; copiar IP, mods e MOTD.
-- **Tema** neon fuchsia/purple/cyan inspirado no pwnd.blog.
+- **Async scan** with configurable concurrency.
+- **Per-host state**: `queued → scanning → online / failed` (offline/failed hosts stay visible).
+- **Whitelist detection** by attempting a login and reading the disconnect reason.
+- **Mod detection** (Forge `forgeData` and `modinfo`/`modList`).
+- **Colored MOTD** — supports legacy `§` codes, modern hex `§x§R§R§G§G§B§B`, uppercase codes and `§k`.
+- **Query filter**: `mod:create`, `ver:1.20`, `players:>20`, `ping:<50`, `wl:yes`, `state:failed`, `starred:1` plus free text.
+- **Tabs**: all / modded / whitelist / starred.
+- **Sorting** by players, ping, version or name (also by clicking the column header).
+- **Cache** (`.mcscan_cache.json`) with autosave and `--resume`.
+- **Export** to JSON and CSV; copy IP, mods and MOTD.
+- **Theme**: neon fuchsia / purple / cyan.
 
-## Instalação
+## Install
 
-Requer **Python 3.10+**.
+Requires **Python 3.10+**.
 
 ```bash
-# direto do código
-pip install -r requirements.txt   # ou:
-pip install mcstatus textual
+# from source
+pip install -r requirements.txt   # or: pip install mcstatus textual
 
-# ou instalando o pacote (cria o comando `minersfinder`)
+# or install the package (creates the `minersfinder` command)
 pip install -e .
 ```
 
-Dependências: [`mcstatus`](https://github.com/py-mine/mcstatus) e [`textual`](https://github.com/Textualize/textual).
+Dependencies: [`mcstatus`](https://github.com/py-mine/mcstatus) and [`textual`](https://github.com/Textualize/textual).
 
-## Uso
+## Usage
 
 ```bash
-# via pacote
+# as a module
 python -m minersfinder hosts.txt
 
-# comando instalado (pip install -e .)
+# installed command (pip install -e .)
 minersfinder hosts.txt
 
-# shim de compatibilidade (mesmo comando antigo)
-python3 mcscanfoda.py hosts.txt
+# compatibility shim (the original command still works)
+python3 main.py hosts.txt
 ```
 
-Formato do arquivo de hosts (veja `hosts.example.txt`):
+Hosts file format (see `hosts.example.txt`):
 
 ```
 play.example.com
@@ -57,86 +56,75 @@ mc.example.net:25566
 {"ip": "10.0.0.5", "port": 25565}
 ```
 
-### Opções de linha de comando
+### CLI options
 
-| Flag | Padrão | Descrição |
+| Flag | Default | Description |
 |---|---|---|
-| `-t, --timeout` | `2.0` | Timeout de conexão (segundos) |
-| `-c, --concurrency` | `400` | Máximo de verificações simultâneas |
-| `-p, --port` | `25565` | Porta padrão |
-| `--cache` | `.mcscan_cache.json` | Arquivo de cache |
-| `--no-cache` | — | Não carrega scan anterior |
-| `--resume` | — | Pula hosts já online no cache |
-| `-o, --out` | `.` | Diretório de exportação |
+| `-t, --timeout` | `2.0` | Connection timeout (seconds) |
+| `-c, --concurrency` | `400` | Max concurrent checks |
+| `-p, --port` | `25565` | Default port |
+| `--cache` | `.mcscan_cache.json` | Cache file |
+| `--no-cache` | — | Do not load a previous scan |
+| `--resume` | — | Skip hosts already online in the cache |
+| `-o, --out` | `.` | Export directory |
 
-## Atalhos
+## Keybindings
 
-| Tecla | Ação |
+| Key | Action |
 |---|---|
-| `/` ou `f` | Focar busca |
-| `Esc` | Limpar busca |
-| `Enter` | Focar tabela |
-| `?` | Ajuda |
-| `↑ ↓` | Navegar |
-| `1 2 3 4` | Abas: all / modded / whitelist / starred (`d` / `w` atalhos) |
-| `s p v n` | Ordenar por players / ping / version / nome |
-| `*` | Favoritar |
-| `c m t` | Copiar IP / mods / MOTD |
-| `r` / `u` | Rescan do selecionado / dos falhos |
-| `e` / `x` | Exportar JSON / CSV |
-| `q` | Sair |
+| `/` or `f` | Focus search |
+| `Esc` | Clear search |
+| `Enter` | Focus table |
+| `?` | Help |
+| `↑ ↓` | Navigate |
+| `1 2 3 4` | Tabs: all / modded / whitelist / starred (`d` / `w` shortcuts) |
+| `s p v n` | Sort by players / ping / version / name |
+| `*` | Star |
+| `c m t` | Copy IP / mods / MOTD |
+| `r` / `u` | Rescan selected / rescan failed |
+| `e` / `x` | Export JSON / CSV |
+| `q` | Quit |
 
-## Filtro (query)
+## Query filter
 
-Termos separados por espaço, combinados com **AND**. Termo solto = busca livre; `chave:valor` filtra por campo:
+Space-separated terms combined with **AND**. A bare term is a free-text match; `key:value` filters a field:
 
 ```
-mod:create            # mods que contenham "create"
-ver:1.20              # versão contém 1.20
-host:mc.              # host contém "mc."
-players:>20           # >= operadores: > < >= <= =
+mod:create            # mods containing "create"
+ver:1.20              # version contains 1.20
+host:mc.              # host contains "mc."
+players:>20           # operators: > < >= <= =
 ping:<50
 wl:yes                # yes / no / unknown (y/n/?)
 state:failed          # queued / scanning / online / failed
 starred:1
 ```
 
-Ex.: `mod:create players:>10 ping:<80` mostra servidores modados com Create, 10+ jogadores e ping baixo.
+Example: `mod:create players:>10 ping:<80` shows modded servers with Create, 10+ players and low ping.
 
-## Estrutura do projeto
+## Project layout
 
 ```
 minersfinder/
-├── __init__.py      # versão
+├── __init__.py      # version
 ├── __main__.py      # python -m minersfinder
 ├── cli.py           # argparse / entry point
-├── app.py           # App Textual (UI, scan, cache, export)
-├── app.tcss         # tema/CSS do Textual
-├── widgets.py       # painel de detalhes + modal de ajuda
-├── scanner.py       # check_host() e leitura do arquivo de hosts
-├── protocol.py      # VarInt, handshake e probe de whitelist
-├── motd.py          # parser de códigos de cor do Minecraft
-├── query.py         # linguagem de filtro
-├── models.py        # modelo de entrada do servidor
-├── cache.py         # load/save do cache JSON
-├── formatting.py    # helpers de Rich (latência, barra de players)
+├── app.py           # Textual app (UI, scan, cache, export)
+├── app.tcss         # Textual theme/CSS
+├── widgets.py       # details panel + help modal
+├── scanner.py       # check_host() and hosts-file parsing
+├── protocol.py      # VarInt, handshake and whitelist probe
+├── motd.py          # Minecraft color-code parser
+├── query.py         # filter language
+├── models.py        # server entry model
+├── cache.py         # JSON cache load/save
+├── formatting.py    # Rich helpers (latency, player bar)
 ├── util.py          # clipboard
-└── constants.py     # constantes e paleta de estados
+└── constants.py     # constants and state palette
 ```
 
-O `mcscanfoda.py` na raiz é apenas um shim de compatibilidade.
+The `main.py` file at the repository root is just a compatibility shim.
 
-## Roadmap
+## License
 
-- [ ] Bot system / toolkit (sidecar `mineflayer`): entrar, observar, capturar chat, enumerar players.
-- [ ] Sistema de plugins/ações com gate de segurança (allowlist, rate-limit, read-only por padrão).
-- [ ] Storage em SQLite e histórico de scans.
-- [ ] Auth Microsoft (device code) e suporte a proxy.
-
-## Aviso
-
-Use de forma **responsável e autorizada**. Escanear/entrar em servidores de terceiros pode violar os Termos de Serviço e a lei aplicável. Automatizar contas pode resultar em banimento. Use apenas em servidores seus ou com autorização explícita.
-
-## Licença
-
-MIT — veja [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

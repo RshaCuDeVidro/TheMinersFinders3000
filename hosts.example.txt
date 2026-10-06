@@ -1,9 +1,9 @@
-# Exemplo de arquivo de hosts — uma entrada por linha.
-# Formatos aceitos:
+# Example hosts file — one entry per line.
+# Accepted formats:
 #   host
-#   host:porta
-#   [ipv6]:porta
-#   {"ip": "1.2.3.4", "port": 25565}   (JSON por linha)
+#   host:port
+#   [ipv6]:port
+#   {"ip": "1.2.3.4", "port": 25565}   (one JSON object per line)
 
 play.example.com
 mc.example.net:25566
