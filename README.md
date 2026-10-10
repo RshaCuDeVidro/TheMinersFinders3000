@@ -70,6 +70,7 @@ mc.example.net:25566
 | `--cache` | `.mcscan_cache.json` | Cache file |
 | `--no-cache` | — | Do not load a previous scan |
 | `--resume` | — | Skip hosts already online in the cache |
+| `--no-whitelist` | — | Skip the whitelist login probe (faster; fewer connections) |
 | `-o, --out` | `.` | Export directory |
 
 ## Keybindings

@@ -79,14 +79,15 @@ def classify_whitelist(msg: str) -> str:
     return "yes" if any(k in low for k in WL_KEYWORDS) else "no"
 
 
-async def check_whitelist_aggressive(ip, port):
+async def check_whitelist_aggressive(ip, port, timeout=1.5):
     """Attempt a login and inspect the disconnect reason to detect a whitelist.
 
-    Returns ``"yes"``, ``"no"`` or ``"unknown"``.
+    Returns ``"yes"``, ``"no"`` or ``"unknown"``. *timeout* bounds both the
+    initial connect and each subsequent read.
     """
     writer = None
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=1.5)
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
         host_bytes = ip.encode('utf-8')
         handshake = (write_varint(0x00) + write_varint(PROTOCOL_VERSION) + write_varint(len(host_bytes))
                      + host_bytes + struct.pack(">H", port) + write_varint(2))
@@ -98,10 +99,10 @@ async def check_whitelist_aggressive(ip, port):
 
         for _ in range(3):
             try:
-                packet_len = await asyncio.wait_for(read_varint(reader), timeout=1.5)
-                packet_id = await asyncio.wait_for(read_varint(reader), timeout=1.5)
+                packet_len = await asyncio.wait_for(read_varint(reader), timeout=timeout)
+                packet_id = await asyncio.wait_for(read_varint(reader), timeout=timeout)
                 consumed = len(write_varint(packet_id))
-                payload = await asyncio.wait_for(reader.readexactly(max(0, packet_len - consumed)), timeout=1.5)
+                payload = await asyncio.wait_for(reader.readexactly(max(0, packet_len - consumed)), timeout=timeout)
             except (asyncio.IncompleteReadError, ConnectionError, asyncio.TimeoutError, ValueError):
                 break
             if packet_id == 0x00:

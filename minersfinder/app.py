@@ -13,6 +13,7 @@ from rich.style import Style
 from rich.text import Text as RichText
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.command import Hit, Hits, Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, DataTable, Footer, Header, Input, ProgressBar, Static, Tab, Tabs
 
@@ -21,12 +22,12 @@ from .constants import (
     AUTOSAVE_INTERVAL, DEFAULT_CACHE, DEFAULT_PORT, MATCH_CHUNK,
     PAGE_SIZE, REFRESH_INTERVAL, STATE_STYLE,
 )
-from .formatting import latency_style
+from .formatting import latency_style, player_bar
 from .models import new_entry, search_blob
 from .motd import clean_mc_codes
 from .query import parse_query
 from .scanner import check_host, read_hosts_file
-from .util import copy_to_clipboard
+from .util import copy_to_clipboard, version_sort_key
 from .widgets import HelpScreen, ServerDetails, SettingsScreen
 
 _CELL_CACHE = {}
@@ -42,6 +43,40 @@ def _cell(value, style):
     return cached
 
 
+class MinersCommands(Provider):
+    """Expose the app's actions in the command palette (Ctrl+P) for discovery."""
+
+    def _commands(self):
+        app = self.app
+        return [
+            ("view: all servers", app.action_view_all, "show every server"),
+            ("view: modded", app.action_view_modded, "only servers with mods"),
+            ("view: whitelist", app.action_view_whitelist, "only whitelisted servers"),
+            ("view: starred", app.action_view_starred, "only starred servers"),
+            ("sort by players", app.action_sort_players, "most players first"),
+            ("sort by ping", app.action_sort_ping, "lowest latency first"),
+            ("sort by version", app.action_sort_version, "by game version"),
+            ("sort by name", app.action_sort_name, "alphabetical by host"),
+            ("rescan selected", app.action_rescan_selected, "re-query the highlighted host"),
+            ("rescan failed", app.action_rescan_failed, "re-query every failed host"),
+            ("export JSON", app.action_export_json, "save the current view as JSON"),
+            ("export CSV", app.action_export_csv, "save the current view as CSV"),
+            ("toggle star", app.action_toggle_star, "star/unstar the highlighted host"),
+            ("copy IP", app.action_copy_ip, "copy host to clipboard"),
+            ("copy mods", app.action_copy_mods, "copy mod list to clipboard"),
+            ("copy MOTD", app.action_copy_motd, "copy MOTD to clipboard"),
+            ("settings", app.action_settings, "threads, timeout, page size, whitelist"),
+            ("help", app.action_help, "keybindings and query syntax"),
+        ]
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        for title, runnable, help_text in self._commands():
+            score = matcher.match(title)
+            if score > 0:
+                yield Hit(score, matcher.highlight(title), runnable, help=help_text)
+
+
 _STYLE_STAR = Style.parse("#eab308")
 _STYLE_DOT = Style.parse("#2a2a3a")
 _STYLE_HOST = Style.parse("bold #e5e7eb")
@@ -52,6 +87,7 @@ class McScanFodaApp(App):
     TITLE = "TheMinersFinder3000"
     SUB_TITLE = "minecraft server scanner"
     CSS_PATH = Path(__file__).with_name("app.tcss")
+    COMMANDS = App.COMMANDS | {MinersCommands}
 
     BINDINGS = [
         Binding("q", "quit", "exit"),
@@ -86,12 +122,14 @@ class McScanFodaApp(App):
     ]
 
     def __init__(self, hosts_file, timeout=2.0, concurrency=400, default_port=DEFAULT_PORT,
-                 cache_file=DEFAULT_CACHE, use_cache=True, resume=False, out_dir="."):
+                 cache_file=DEFAULT_CACHE, use_cache=True, resume=False, out_dir=".",
+                 probe_whitelist=True):
         super().__init__()
         self.hosts_file = hosts_file
         self.timeout = timeout
         self.concurrency = concurrency
         self.default_port = default_port
+        self.probe_whitelist = probe_whitelist
         self.cache_file = cache_file
         self.use_cache = use_cache
         self.resume = resume
@@ -146,6 +184,7 @@ class McScanFodaApp(App):
         with Horizontal(id="main"):
             with Vertical(id="left_pane"):
                 yield DataTable(id="server_table")
+                yield Static("", id="empty_hint")
                 with Horizontal(id="page_bar"):
                     yield Button("<", id="page_prev")
                     yield Static("1 / 1", id="page_label")
@@ -164,7 +203,8 @@ class McScanFodaApp(App):
         self.col_keys = [
             table.add_column("host", width=31),
             table.add_column("version", width=14),
-            table.add_column("load", width=18),
+            table.add_column("players", width=16),
+            table.add_column("ping", width=8),
             table.add_column("wl", width=3),
             table.add_column("mods", width=8),
         ]
@@ -195,7 +235,7 @@ class McScanFodaApp(App):
             return
         if pane <= 0:
             return
-        others = 14 + 18 + 3 + 8
+        others = 14 + 16 + 8 + 3 + 8
         overhead = 2 * (len(self.col_keys) - 1)
         host_w = max(12, pane - others - overhead - 1)
         try:
@@ -300,14 +340,43 @@ class McScanFodaApp(App):
             return
         table.clear()
         self._page_dirty = False
+        rows = 0
         for e in self._page_entries(self.page):
             table.add_row(*self._row_cells(e), key=e["host"])
+            rows += 1
         if self._selected:
             try:
                 table.move_cursor(row=table.get_row_index(self._selected))
             except Exception:
                 pass
+        self._update_empty_hint(rows)
         self._update_page_label()
+
+    def _update_empty_hint(self, rows):
+        try:
+            hint = self.query_one("#empty_hint", Static)
+        except Exception:
+            return
+        if rows:
+            hint.display = False
+            return
+        if not self.all_entries:
+            msg = "[#6b7280]no hosts loaded yet[/]"
+        elif self._last_query_text.strip():
+            msg = ("[#9ca3af]no servers match this filter[/]\n"
+                   "[#6b7280]press [#e5e7eb]Esc[/] to clear the search[/]")
+        else:
+            labels = {
+                "modded": "no modded servers found",
+                "whitelist": "no whitelisted servers found",
+                "starred": "no starred servers yet",
+            }
+            base = labels.get(self.view, "no servers to show")
+            msg = f"[#9ca3af]{base}[/]"
+            if self._scanning:
+                msg += "\n[#6b7280]still scanning...[/]"
+        hint.update(msg)
+        hint.display = True
 
     def _update_page_label(self):
         total = self._total_pages()
@@ -472,7 +541,7 @@ class McScanFodaApp(App):
         e["state"] = state
 
     async def check_server(self, host):
-        return await check_host(host, self.timeout)
+        return await check_host(host, self.timeout, self.probe_whitelist)
 
     # -------------------------------------------------------------- view
     def _visible(self, e):
@@ -492,26 +561,39 @@ class McScanFodaApp(App):
         starred = e.get("starred")
         wl = e.get("whitelist", "unknown")
 
+        failed = state == "failed"
+
         host_cell = RichText()
         host_cell.append(glyph, style=color)
         host_cell.append(" ")
         host_cell.append("★" if starred else "·", style=_STYLE_STAR if starred else _STYLE_DOT)
         host_cell.append(" ")
-        host_cell.append(e["host"], style=_STYLE_HOST_BAD if state == "failed" else _STYLE_HOST)
+        host_cell.append(e["host"], style=_STYLE_HOST_BAD if failed else _STYLE_HOST)
 
-        load = RichText()
-        load.append(f"{e.get('online', 0)}/{e.get('max', 0)}", style="#e5e7eb")
-        load.append(" ")
-        load.append(f"{lat:.0f}ms" if lat is not None else "—",
-                    style=latency_style(lat) if lat is not None else "#6b7280")
+        if failed:
+            # whole row muted so online rows stand out
+            players_cell = _cell("—", "#4b5563")
+            ping_cell = _cell("—", "#4b5563")
+            version_cell = _cell(e.get("version", "")[:14] or "—", "#4b5563")
+            mods_cell = _cell("—", "#4b5563")
+        else:
+            players_cell = RichText.from_markup(
+                player_bar(e.get("online", 0), e.get("max", 0), width=6)
+            )
+            ping_cell = (_cell(f"{lat:.0f}ms", latency_style(lat))
+                         if lat is not None else _cell("—", "#6b7280"))
+            version_cell = _cell(e.get("version", "")[:14], "#06b6d4")
+            mods_cell = (_cell(f"⚙ {len(mods)}", "#d946ef") if mods
+                         else _cell("vanilla", "#6b7280"))
 
         wl_text, wl_color = {"yes": ("Y", "#f43f5e"), "no": ("N", "#22c55e")}.get(wl, ("?", "#6b7280"))
         return [
             host_cell,
-            _cell(e.get("version", "")[:14], "#06b6d4"),
-            load,
+            version_cell,
+            players_cell,
+            ping_cell,
             _cell(wl_text, wl_color),
-            _cell("modded" if mods else "vanilla", "#d946ef" if mods else "#6b7280"),
+            mods_cell,
         ]
 
     def _sort_value(self, e):
@@ -522,7 +604,7 @@ class McScanFodaApp(App):
             lat = e.get("latency")
             return lat if lat is not None else 1e9
         if k == "version":
-            return e.get("version", "")
+            return version_sort_key(e.get("version", ""))
         return e.get("host", "")
 
     def _selected_host(self):
@@ -626,7 +708,7 @@ class McScanFodaApp(App):
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         key = event.column_key.value if event.column_key else None
-        mapping = {"load": "players", "version": "version", "host": "name"}
+        mapping = {"players": "players", "ping": "ping", "version": "version", "host": "name"}
         if key in mapping:
             self._sort_by(mapping[key])
 
@@ -664,6 +746,7 @@ class McScanFodaApp(App):
             "timeout": self.timeout,
             "page_size": self.page_size,
             "default_port": self.default_port,
+            "probe_whitelist": self.probe_whitelist,
         }))
 
     def apply_settings(self, cfg):
@@ -671,11 +754,14 @@ class McScanFodaApp(App):
         self.timeout = max(0.1, float(cfg.get("timeout", self.timeout)))
         self.page_size = max(10, int(cfg.get("page_size", self.page_size)))
         self.default_port = int(cfg.get("default_port", self.default_port))
+        self.probe_whitelist = bool(cfg.get("probe_whitelist", self.probe_whitelist))
         self.page = 0
         self._invalidate_matches()
         self._render_page()
         self._update_status()
-        self.notify(f"settings: {self.concurrency} threads · {self.page_size}/page · timeout {self.timeout:g}s")
+        wl = "on" if self.probe_whitelist else "off"
+        self.notify(f"settings: {self.concurrency} threads · {self.page_size}/page · "
+                    f"timeout {self.timeout:g}s · whitelist {wl}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -817,20 +903,26 @@ class McScanFodaApp(App):
         self.out_dir.mkdir(parents=True, exist_ok=True)
         return self.out_dir / name
 
+    def _visible_entries(self):
+        """Entries matching the current view/tab and search filter."""
+        return [e for e in self.all_entries if self._visible(e)]
+
     def action_export_json(self):
-        if not self.all_entries:
+        entries = self._visible_entries()
+        if not entries:
             self.notify("nothing to export", severity="warning")
             return
         path = self._export_path(f"mc_servers_{datetime.now():%Y%m%d_%H%M%S}.json")
-        clean = [{k: v for k, v in e.items() if k != "_search"} for e in self.all_entries]
+        clean = [{k: v for k, v in e.items() if k != "_search"} for e in entries]
         try:
             path.write_text(json.dumps(clean, indent=2))
-            self.notify(f"saved {path}")
+            self.notify(f"saved {path} ({len(entries)} of {len(self.all_entries)})")
         except Exception as e:
             self.notify(f"export error: {e}", severity="error")
 
     def action_export_csv(self):
-        if not self.all_entries:
+        entries = self._visible_entries()
+        if not entries:
             self.notify("nothing to export", severity="warning")
             return
         path = self._export_path(f"mc_servers_{datetime.now():%Y%m%d_%H%M%S}.csv")
@@ -839,7 +931,7 @@ class McScanFodaApp(App):
                 w = csv.writer(f)
                 w.writerow(["host", "state", "error", "version", "online", "max", "latency_ms",
                             "whitelist", "starred", "mods", "motd"])
-                for r in self.all_entries:
+                for r in entries:
                     w.writerow([
                         r["host"], r.get("state", ""), r.get("error") or "",
                         r.get("version", ""),
@@ -848,6 +940,6 @@ class McScanFodaApp(App):
                         r.get("whitelist", "unknown"), bool(r.get("starred")),
                         ";".join(r.get("mods") or []), clean_mc_codes(r.get("motd_raw", "")),
                     ])
-            self.notify(f"saved {path}")
+            self.notify(f"saved {path} ({len(entries)} of {len(self.all_entries)})")
         except Exception as e:
             self.notify(f"export error: {e}", severity="error")

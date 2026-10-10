@@ -70,6 +70,7 @@ mc.example.net:25566
 | `--cache` | `.mcscan_cache.json` | Arquivo de cache |
 | `--no-cache` | — | Não carrega scan anterior |
 | `--resume` | — | Pula hosts já online no cache |
+| `--no-whitelist` | — | Pula a sondagem de login da whitelist (mais rápido; menos conexões) |
 | `-o, --out` | `.` | Diretório de exportação |
 
 ## Atalhos

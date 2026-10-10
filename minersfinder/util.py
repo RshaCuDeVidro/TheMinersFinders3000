@@ -1,7 +1,17 @@
 """Small OS helpers."""
 
 import os
+import re
 import subprocess
+
+
+def version_sort_key(version: str):
+    """Sort key for a Minecraft version string.
+
+    Extracts numeric groups so ``1.9`` sorts before ``1.20`` (and names like
+    ``"Paper 1.20.1"`` order sensibly). A string with no digits sorts first.
+    """
+    return tuple(int(n) for n in re.findall(r"\d+", version or ""))
 
 
 def copy_to_clipboard(text: str):

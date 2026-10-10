@@ -38,12 +38,12 @@ def read_hosts_file(path, default_port):
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
-            if not line:
+            if not line or line.startswith("#"):
                 continue
             if line.startswith("{"):
                 try:
                     data = json.loads(line)
-                    hosts.append(f"{data['ip']}:{data['port']}")
+                    hosts.append(f"{data['ip']}:{data.get('port', default_port)}")
                 except (json.JSONDecodeError, KeyError, TypeError):
                     malformed += 1
             else:
@@ -51,11 +51,14 @@ def read_hosts_file(path, default_port):
     return list(dict.fromkeys(hosts)), malformed
 
 
-async def check_host(host, timeout=2.0):
+async def check_host(host, timeout=2.0, probe_whitelist=True):
     """Query a single server.
 
     Returns an entry dict. On success ``state == "online"``; on failure
     ``state == "failed"`` with an ``error`` reason (timeout/refused/reset/dns).
+
+    When *probe_whitelist* is false the (second) login probe is skipped and the
+    whitelist stays ``"unknown"``, halving the connections made per host.
     """
     try:
         addr, port = parse_host_port(host)
@@ -76,7 +79,8 @@ async def check_host(host, timeout=2.0):
         elif 'forgeData' in raw and 'mods' in raw['forgeData']:
             found_mods = [m['modId'] for m in raw['forgeData']['mods']]
 
-        whitelist = await check_whitelist_aggressive(addr, port)
+        whitelist = (await check_whitelist_aggressive(addr, port, timeout)
+                     if probe_whitelist else "unknown")
         sample = [p.name for p in (status.players.sample or [])]
         return {
             "host": host,

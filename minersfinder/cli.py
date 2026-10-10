@@ -18,6 +18,8 @@ def build_arg_parser():
     p.add_argument("--cache", default=DEFAULT_CACHE, help=f"cache file (default {DEFAULT_CACHE})")
     p.add_argument("--no-cache", action="store_true", help="do not load a previous scan")
     p.add_argument("--resume", action="store_true", help="skip hosts already online in the cache")
+    p.add_argument("--no-whitelist", dest="whitelist", action="store_false",
+                   help="skip the whitelist login probe (faster; fewer connections)")
     p.add_argument("-o", "--out", default=".", help="directory for exports (default .)")
     return p
 
@@ -33,5 +35,6 @@ def main(argv=None):
         use_cache=not args.no_cache,
         resume=args.resume,
         out_dir=args.out,
+        probe_whitelist=args.whitelist,
     )
     app.run()

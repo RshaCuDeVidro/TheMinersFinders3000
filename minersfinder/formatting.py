@@ -10,11 +10,11 @@ def latency_style(ms):
     return "#ef4444"
 
 
-def player_bar(online, mx):
-    """A small ``████░░ 42/100`` style bar."""
+def player_bar(online, mx, width=12):
+    """A small ``████░░ 42/100`` style bar (``width`` block cells)."""
     if not mx:
         return f"[#6b7280]{online}/?[/]"
     frac = max(0.0, min(1.0, online / mx))
-    filled = round(frac * 12)
+    filled = round(frac * width)
     color = "#22c55e" if frac >= 0.8 else "#eab308" if frac >= 0.4 else "#06b6d4"
-    return f"[{color}]{'█' * filled}[/][#242038]{'░' * (12 - filled)}[/] [#e5e7eb]{online}/{mx}[/]"
+    return f"[{color}]{'█' * filled}[/][#242038]{'░' * (width - filled)}[/] [#e5e7eb]{online}/{mx}[/]"

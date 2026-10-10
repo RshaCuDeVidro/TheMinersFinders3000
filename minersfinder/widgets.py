@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Collapsible, Input, Static
+from textual.widgets import Button, Collapsible, Input, Static, Switch
 
 from .constants import STATE_STYLE
 from .formatting import latency_style, player_bar
@@ -19,6 +19,7 @@ HELP_TEXT = """[bold #d946ef]TheMinersFinder3000[/] [#6b7280]— help[/]
   [#e5e7eb]/[/] or [#e5e7eb]f[/]   focus search      [#e5e7eb]Esc[/]   clear search
   [#e5e7eb]Enter[/]    focus table       [#e5e7eb]?[/]     this help
   [#e5e7eb]↑ ↓[/]     move selection    [#e5e7eb]q[/]     quit
+  [#e5e7eb]Ctrl+P[/]  command palette (search all actions)
 
 [bold #9333ea]views (tabs)[/]
   [#e5e7eb]1[/] all   [#e5e7eb]2[/] modded   [#e5e7eb]3[/] whitelist   [#e5e7eb]4[/] starred
@@ -85,6 +86,9 @@ class SettingsScreen(ModalScreen):
             with Horizontal(classes="set_row"):
                 yield Static("default port")
                 yield Input(value=str(self.values["default_port"]), id="set_default_port", type="integer")
+            with Horizontal(classes="set_row"):
+                yield Static("whitelist probe")
+                yield Switch(value=bool(self.values.get("probe_whitelist", True)), id="set_probe_whitelist")
             with Horizontal(id="settings_buttons"):
                 yield Button("reset", id="set_reset")
                 yield Button("cancel", id="set_cancel", variant="error")
@@ -103,11 +107,16 @@ class SettingsScreen(ModalScreen):
             return default
 
     def _collect(self):
+        try:
+            probe = self.query_one("#set_probe_whitelist", Switch).value
+        except Exception:
+            probe = self.values.get("probe_whitelist", True)
         return {
             "concurrency": self._int("#set_concurrency", self.values["concurrency"]),
             "timeout": self._float("#set_timeout", self.values["timeout"]),
             "page_size": self._int("#set_page_size", self.values["page_size"]),
             "default_port": self._int("#set_default_port", self.values["default_port"]),
+            "probe_whitelist": probe,
         }
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -116,7 +125,8 @@ class SettingsScreen(ModalScreen):
             self.app.apply_settings(self._collect())
             self.app.pop_screen()
         elif bid == "set_reset":
-            self.app.apply_settings({"concurrency": 400, "timeout": 2.0, "page_size": 200, "default_port": 25565})
+            self.app.apply_settings({"concurrency": 400, "timeout": 2.0, "page_size": 200,
+                                     "default_port": 25565, "probe_whitelist": True})
             self.app.pop_screen()
         else:
             self.app.pop_screen()
